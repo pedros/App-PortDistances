@@ -10,8 +10,8 @@ class App::PortDistances::DB {
     use Cwd;
     use constant DB_FILE => Cwd::abs_path(
         File::Spec->catfile( $FindBin::Bin, qw/.. .. ../, 'data', 'db.json' )
-        );
-
+    );
+    
     use App::PortDistances::DB::Port;
     use App::PortDistances::Types
         qw/
@@ -64,6 +64,52 @@ class App::PortDistances::DB {
         },
     );
 
+=head2 find( %args )
+
+Takes any number of the named parameters below.
+
+Optionally applies set operations on the result set.
+
+Returns flattened list in list context or an array reference in scalar context.
+
+=over
+
+=item name => $name
+
+Find port by exact name match.
+
+=item aname => $aname
+
+Find port(s) by approximate name match using L<String::Approx|GIS::Distance>.
+
+=item country => $country
+
+Find port by exact country match.
+
+=item quadrant   => NE|NW|SW|SE
+
+=item hemisphere => N|S
+
+Find port(s) by broad region.
+
+=item latitude  => $lat
+
+=item longitude => $lon
+
+=item radius    => $radius
+
+Find port(s) by proximity within given radius, in miles, using L<GIS::Distance|GIS::Distance>.
+
+=item intersection => $intersection
+
+=item union        => $union
+
+Return intersection or union of results in case of more than one search criteria is specified.
+
+=back
+
+=cut
+
     method find ( Str      :$aname?,            Str        :$name?,
                   Str      :$country?,          Num        :$radius?,
                   Coord    :$latitude?,         Coord      :$longitude?,
@@ -86,7 +132,7 @@ class App::PortDistances::DB {
         @ports = map { $self->details($_) } $self->_set_combine( \@ports, intersection => $intersection )
             if $intersection or $union;
 
-        return wantarray ? @ports : \@ports;
+        return wantarray ? map { @$_ } @ports : \@ports;
     }
 
     method _set_combine ( ArrayRef[ArrayRef] $lists!, Bool :$intersection? = 0 ) {
@@ -106,7 +152,7 @@ class App::PortDistances::DB {
         return @ports;
     }
 
-    method _find_by_prox ( Str :$name?, Coord :$latitude?, Coord :$longitude?, Num :$radius! ) {
+    method _find_by_prox ( Str :$name?, Coord :$latitude?, Coord :$longitude?, Num :$radius = 0 ) {
         eval { require GIS::Distance }
             and ($name or (defined $latitude and defined $longitude)) or return;    
     
