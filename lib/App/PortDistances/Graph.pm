@@ -5,7 +5,6 @@ class App::PortDistances::Graph {
     use Graph;
     use FindBin;
 
-    use Data::Dumper;
     use lib File::Spec->catdir( $FindBin::Bin, ('..') x 3, 'lib' );
 
     use App::PortDistances::DB;
@@ -31,9 +30,7 @@ class App::PortDistances::Graph {
         }
     );
 
-    sub _build_graph {
-        my ($self) = @_;
-
+    method _build_graph {
         my $graph = Graph->new;
     SOURCE:
         for my $source ( $self->_db->ports ) {
@@ -126,6 +123,7 @@ class App::PortDistances::Graph {
     }
 };
 
+use Data::Dumper;
 my $o = App::PortDistances::Graph->new;
 print Dumper $o->distance_matrix( $o->shortest_paths( apsp => 1 ) );exit;
 
