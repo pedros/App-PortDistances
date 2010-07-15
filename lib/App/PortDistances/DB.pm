@@ -2,9 +2,6 @@ use MooseX::Declare;
 
 class App::PortDistances::DB {
 
-    use lib File::Spec->catdir( $FindBin::Bin, ('..') x 3, 'lib' );
-    use Data::Dumper;
-
     use File::Spec;
     use FindBin;
     use Cwd;
@@ -12,6 +9,9 @@ class App::PortDistances::DB {
         File::Spec->catfile( $FindBin::Bin, qw/.. .. ../, 'data', 'db.json' )
     );
     
+    use lib File::Spec->catdir( $FindBin::Bin, ('..') x 3, 'lib' );
+    use Data::Dumper;
+
     use App::PortDistances::DB::Port;
     use App::PortDistances::Types
         qw/
@@ -70,7 +70,7 @@ Takes any number of the named parameters below.
 
 Optionally applies set operations on the result set.
 
-Returns flattened list in list context or an array reference in scalar context.
+Returns a new App::PortDistances::DB object containing filtered results.
 
 =over
 
@@ -102,9 +102,7 @@ Find port(s) by proximity within given radius, in miles, using L<GIS::Distance|G
 
 =item intersection => $intersection
 
-=item union        => $union
-
-Return intersection or union of results in case of more than one search criteria is specified.
+Return intersection instead of union of results in case of more than one search criteria is specified.
 
 =back
 
@@ -114,7 +112,7 @@ Return intersection or union of results in case of more than one search criteria
                   Str      :$country?,          Num        :$radius?,
                   Coord    :$latitude?,         Coord      :$longitude?,
                   Quadrant :$quadrant?,         Hemisphere :$hemisphere?,
-                  Bool     :$intersection? = 0, Bool       :$union? = 0 ) {
+                  Bool     :$intersection? = 0 ) {
 
         push my @ports, [ $self->_find_by_approx(  $aname )   ]
             if $aname;
@@ -129,10 +127,10 @@ Return intersection or union of results in case of more than one search criteria
                                                 : (latitude => $latitude, longitude => $longitude )) ]
             if $radius and ($name xor ($latitude and $longitude));
 
-        @ports = map { $self->details($_) } $self->_set_combine( \@ports, intersection => $intersection )
-            if $intersection or $union;
+        my %ports = map { $_ => $self->details($_) }
+            $self->_set_combine( \@ports, intersection => $intersection );
 
-        return wantarray ? map { @$_ } @ports : \@ports;
+        return App::PortDistances::DB->new( db => \%ports );
     }
 
     method _set_combine ( ArrayRef[ArrayRef] $lists!, Bool :$intersection? = 0 ) {
@@ -140,7 +138,7 @@ Return intersection or union of results in case of more than one search criteria
         for my $list ( @$lists ) {
             $counts{$_->name}++ for @$list;
         }
-
+        
         return $intersection
             ? grep { $counts{$_} == @$lists } keys %counts
             : keys %counts;
@@ -148,8 +146,12 @@ Return intersection or union of results in case of more than one search criteria
 
     method _find_by_approx ( Str $aname! ) {
         eval { require String::Approx } or return;
-        my @ports = $self->details( String::Approx::amatch( $aname, ['i'], $self->port_names ) );
-        return @ports;
+
+        return
+        map  { $_->[0] }
+        grep { String::Approx::amatch( $aname, ['i'], @{$_}[1 .. @$_ - 1] ) }
+        map  { [ $_, @{$_->names}, $_->country ] }
+            $self->details( $self->port_names );
     }
 
     method _find_by_prox ( Str :$name?, Coord :$latitude?, Coord :$longitude?, Num :$radius = 0 ) {
@@ -228,13 +230,9 @@ Return intersection or union of results in case of more than one search criteria
 };
 
 __END__
+use Data::Dumper;
 my $o = App::PortDistances::DB->new;
-print Dumper $o;
-$o->_db;
-print Dumper $o;
-$o->_db;
-
-exit;
+print Dumper ($o->find( aname => 'Japan' ));exit;
 print Dumper $o;
 print Dumper ($o->_find_by_country( 'Japan' ));exit;
 print Dumper $o;exit;
