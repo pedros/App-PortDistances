@@ -26,6 +26,7 @@ class App::PortDistances::DB::Port {
             connections => 'count',
             connects    => 'exists',
             distance    => 'get',
+            delete      => 'delete',
         }
     );
 };
