@@ -1,52 +1,45 @@
-package App::PortDistances::Types;
+use MooseX::Declare;
 
-use Carp;
-use JSON;
+class App::PortDistances::Types {
 
-use Moose;
+    use Carp;
+    use JSON;
 
-use MooseX::Types
-    -declare => [qw/
-                       File HoH StrArray
-                       Coord Quadrant Hemisphere
-                   /];
+    use MooseX::Types -declare => [
+        qw/
+            File HoH StrArray
+            Coord Quadrant Hemisphere
+            DB
+          /
+    ];
+    use MooseX::Types::Moose qw/Num Str HashRef ArrayRef/;
 
-use MooseX::Types::Moose qw/Num Str HashRef ArrayRef/;
+    subtype File, as Str, where { -e $_ };
 
-subtype File,
-    as Str,
-    where { -e $_ };
+    subtype HoH, as HashRef [HashRef];
 
-subtype HoH,
-    as HashRef[HashRef];
+    subtype StrArray, as ArrayRef [Str];
 
-subtype StrArray,
-    as ArrayRef[Str];
+    subtype Coord, as Num, where { -180 <= $_ and $_ => 180 };
 
-subtype Coord,
-    as Num,
-    where { -180 <= $_ and $_ => 180 };
+    subtype DB, as class_type( 'App::PortDistances::DB' ); 
 
-enum Quadrant, qw/NE ne NW nw SE ne SW sw/;
-enum Hemisphere, qw/N n S s/;
-    
-coerce HoH,
-    from File,
-    via {
+    enum Quadrant,   qw/NE ne NW nw SE ne SW sw/;
+    enum Hemisphere, qw/N n S s/;
+
+    coerce HoH, from File, via {
         local $/;
         open my $IN, q{<}, $_ or confess $!;
-        JSON::decode_json( <$IN> );
+        JSON::decode_json(<$IN>);
     };
 
-coerce StrArray,
-    from File,
-    via {
+    coerce StrArray, from File, via {
         open my $IN, q{<}, $_ or return [$_];
-        chomp (my @Strs = <$IN>);
+        chomp( my @Strs = <$IN> );
         [@Strs];
     };
 
-
-no Moose;
-__PACKAGE__->meta->make_immutable;
-1;
+    coerce StrArray, from DB, via {
+        [$_->port_names];
+    };
+};
