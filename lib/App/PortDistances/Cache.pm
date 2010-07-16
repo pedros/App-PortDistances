@@ -3,31 +3,35 @@ use MooseX::Declare;
 class App::PortDistances::Cache {
 
     use File::Spec;
+    use FindBin;
+    use Cwd;
+    use constant CACHE_ROOT => File::Spec->catdir(
+        $ENV{HOME} || $ENV{HOMEPATH} || File::Spec->curdir,
+        '.port_distances'
+    );
+        
     use Cache::File;
     use Digest::MD5;
+
+    use App::PortDistances::Types qw/File/;
 
     has 'cache_root' => (
         is       => 'ro',
         isa      => File,
         required => 1,
         lazy     => 1,
-        builder  => '_build_cache_root',
+        default  => CACHE_ROOT,
     );
 
     has 'cache' => (
         is      => 'ro',
-        isa     => 'Cache::File' required => 1,
+        isa     => 'Cache::File',
+        required => 1,
         lazy    => 1,
         builder => '_build_cache',
         clearer => '_clear_cache',
         handles => [qw/freeze thaw/]
     );
-
-    method _build_cache_root {
-        my $home_dir  = $ENV{HOME} || $ENV{HOMEPATH} || File::Spec->curdir;
-        my $conf_dir  = '.port_distances';
-        my $conf_path = File::Spec->catdir( $home_dir, $conf_dir );
-    };
 
     method _build_cache {
         return Cache::File->new(
@@ -40,8 +44,7 @@ class App::PortDistances::Cache {
         $self->cache->clear;
     };
 
-    before [qw/freeze thaw/] {
-        $_[0] = Digest::MD5->new->add( $_[0] )->hexdigest;
-    };
-
+    # before qw/freeze thaw/ => sub {
+    #     $_[0] = Digest::MD5->new->add( $_[0] )->hexdigest;
+    # };
 }
