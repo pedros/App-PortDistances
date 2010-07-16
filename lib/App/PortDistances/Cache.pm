@@ -4,12 +4,13 @@ class App::PortDistances::Cache {
 
     use File::Spec;
     use FindBin;
+    use lib File::Spec->catdir( $FindBin::Bin, ('..') x 3, 'lib' );
     use Cwd;
-    use constant CACHE_ROOT => File::Spec->catdir(
-        $ENV{HOME} || $ENV{HOMEPATH} || File::Spec->curdir,
-        '.port_distances'
-    );
-        
+    use constant CACHE_ROOT => File::Spec->catdir( $ENV{HOME}
+            || $ENV{HOMEPATH}
+            || File::Spec->curdir,
+        '.port_distances' );
+
     use Cache::File;
     use Digest::MD5;
 
@@ -24,19 +25,17 @@ class App::PortDistances::Cache {
     );
 
     has 'cache' => (
-        is      => 'ro',
-        isa     => 'Cache::File',
-        required => 1,
-        lazy    => 1,
-        builder => '_build_cache',
-        clearer => '_clear_cache',
-        handles => [qw/freeze thaw/]
+        is              => 'ro',
+        isa             => 'Cache::File',
+        required        => 1,
+        lazy            => 1,
+        builder         => '_build_cache',
+        clearer         => '_clear_cache',
     );
 
     method _build_cache {
-        return Cache::File->new(
-            cache_root      => $self->cache_root,
-            default_expires => 60 * 60 * 24 * 7,
+        Cache::File->new(
+            cache_root => $self->cache_root,
         );
     };
 
@@ -44,7 +43,11 @@ class App::PortDistances::Cache {
         $self->cache->clear;
     };
 
-    # before qw/freeze thaw/ => sub {
-    #     $_[0] = Digest::MD5->new->add( $_[0] )->hexdigest;
-    # };
+    method freeze ( $key!, $value! ) {
+        $self->cache->freeze( Digest::MD5->new->add($key)->hexdigest, $value );
+    }
+
+    method thaw ( $key! ) {
+        $self->cache->thaw( Digest::MD5->new->add($key)->hexdigest );
+    }
 }
