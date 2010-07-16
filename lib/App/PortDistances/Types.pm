@@ -7,11 +7,11 @@ use Moose;
 
 use MooseX::Types
     -declare => [qw/
-                       File HoH Coord
-                       Quadrant Hemisphere
+                       File HoH StrArray
+                       Coord Quadrant Hemisphere
                    /];
 
-use MooseX::Types::Moose qw/Str HashRef Num/;
+use MooseX::Types::Moose qw/Num Str HashRef ArrayRef/;
 
 subtype File,
     as Str,
@@ -19,6 +19,9 @@ subtype File,
 
 subtype HoH,
     as HashRef[HashRef];
+
+subtype StrArray,
+    as ArrayRef[Str];
 
 subtype Coord,
     as Num,
@@ -34,6 +37,15 @@ coerce HoH,
         open my $IN, q{<}, $_ or confess $!;
         JSON::decode_json( <$IN> );
     };
+
+coerce StrArray,
+    from File,
+    via {
+        open my $IN, q{<}, $_ or return [$_];
+        chomp (my @Strs = <$IN>);
+        [@Strs];
+    };
+
 
 no Moose;
 __PACKAGE__->meta->make_immutable;
