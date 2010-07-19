@@ -8,15 +8,24 @@ class App::PortDistances::Graph {
     use lib File::Spec->catdir( $FindBin::Bin, ('..') x 3, 'lib' );
 
     use App::PortDistances::DB;
+    use App::PortDistances::Cache;
 
     has '_db' => (
         is       => 'rw',
         isa      => 'App::PortDistances::DB',
-        default  => sub { App::PortDistances::DB->new },
         lazy     => 1,
         required => 1,
         clearer  => '_clear__db',
         handles  => { 'find' => 'find' },
+        default  => sub { App::PortDistances::DB->new },
+    );
+
+    has '_cache' => (
+        is       => 'rw',
+        isa      => 'App::PortDistances::Cache',
+        required => 1,
+        lazy     => 1,
+        default  => sub { App::PortDistances::Cache->new },
     );
 
     has 'graph' => (
@@ -34,18 +43,42 @@ class App::PortDistances::Graph {
     );
 
     has 'apsp' => (
-        is      => 'ro',
+        is      => 'rw',
         isa     => 'Graph',
         default => sub { shift->APSP_Floyd_Warshall },
         lazy    => 1,
     );
 
     has 'sssp' => (
-        is      => 'ro',
+        is      => 'rw',
         isa     => 'Graph',
-        default => sub { shift->SPT_Dijkstra },
+        default => sub { shift->SPT_Dijkstra( shift ) },
         lazy    => 1,
     );
+    
+    around apsp {
+        my $key = join q{:}, 'apsp', sort $self->_db->port_names;
+
+        print STDERR "Got apsp from cache\n" and return $self->_cache->get( $key )
+            if $self->_cache->in( $key );
+
+        print STDERR "Computing apsp into cache\n";
+        my $struct = $self->$orig;
+        $self->_cache->set( $key, $struct );
+        return $struct;
+    };
+
+    around sssp ( $source! ) {
+        my $key = join q{:}, $source, sort $self->_db->port_names;
+        
+        print STDERR "Got sssp for $source from cache\n" and return $self->_cache->get( $key )
+            if $self->_cache->in( $key );
+
+        print STDERR "Computing sssp into cache\n";
+        my $struct = $self->$orig( $source );
+        $self->_cache->set( $key, $struct );
+        return $struct;
+    };
 
     method _build_graph {
         my $graph = Graph->new;
@@ -93,8 +126,8 @@ class App::PortDistances::Graph {
             }
         );
         return $graph;
-    }
- 
+    };
+
     method _graph_to_matrix ( $graph! ) {
         my $matrix = Graph::Matrix->new( $graph );
     SOURCE:
@@ -130,44 +163,46 @@ class App::PortDistances::Graph {
         }
         return \@matrix;
     }
-    
-    method shortest_paths (ArrayRef[Str] :$sources? = [], ArrayRef[Str] :$targets? = [], Bool :$apsp? = 0) {
-        my $graph  = Graph->new;
-        my $SP = $self->APSP_Floyd_Warshall if $apsp;
 
-        return $SP;
-    SOURCE:
-        for my $source (@$sources ? @$sources : $self->vertices) {
-            $SP = $self->SPT_Dijkstra( $source ) unless $apsp;
+    method _sssp_to_paths ( Str $source!, ArrayRef[Str] $targets! = [] ) {
+        my %paths;
+        my $sssp = $self->sssp( $source );
+        
+    TARGET:
+        for my $target (@$targets ? @$targets : $self->vertices) {
 
-        TARGET:
-            for my $target (@$targets ? @$targets : $self->vertices) {
-
-                my $predecessor
-                    = $SP->get_vertex_attribute( $target, q{p} )
-                        || next TARGET;
-                
-                my $weight
-                    = $SP->get_edge_attribute( $predecessor, $target, 'weight' );
-
-                $graph->add_weighted_path(
-                    $source,
-                    $weight,
-                    $target
-                );
+            my $current = $target;
+        CURRENT:
+            while ( defined $current ) {
+                my $predecessor = $sssp->get_vertex_attribute( $current, 'p' )
+                    || next TARGET;
+                my $weight = $sssp->get_edge_attribute( $predecessor, $current, 'weight' );                
+                unshift @{ $paths{$target} }, [ $current, $weight ];
+                $current = $predecessor;
             }
         }
-        return $graph;
+        return \%paths
+    };
+    
+    method shortest_paths (ArrayRef[Str] :$sources? = [], ArrayRef[Str] :$targets? = [], Bool :$distance_matrix? = 0 ) {
+
+        return $self->_format_matrix( $self->_graph_to_matrix( $self->_apsp_to_graph ) )
+            if @$sources > 1 or $distance_matrix;
+
+        my %paths;
+    SOURCE:
+        for my $source (@$sources ? @$sources : $self->vertices) {
+            $paths{$source} = $self->_sssp_to_paths( $source, $targets );
+        }
+        return \%paths;
     }
 };
 
 use Data::Dumper;
 my $o = App::PortDistances::Graph->new;
-$o->_db($o->find( quadrant => 'SW' ));
-my $m = $o->_format_matrix( $o->_graph_to_matrix( $o->_apsp_to_graph ) );
+print Dumper $o->shortest_paths( sources => ['Setubal, Portugal', 'Lisboa, Portugal'] );
 
+__END__
 for my $row ( @$m ) {
-
     print join( "\t", map { defined $_ ? $_ : q{} } @$row ), "\n";
-
 }
