@@ -2,9 +2,6 @@ use MooseX::Declare;
 
 class App::PortDistances::Cache {
 
-    use FindBin;
-    use lib File::Spec->catdir( $FindBin::Bin, ('..') x 3, 'lib' );
-
     use File::Spec;
     use Cwd;
     use Cache::File;
@@ -22,9 +19,10 @@ class App::PortDistances::Cache {
         required => 1,
         lazy     => 1,
         default  => CACHE_ROOT,
+        trigger  => sub { shift->_use( 1 ) },
     );
 
-    has 'cache' => (
+    has '_cache' => (
         is              => 'ro',
         isa             => 'Cache::File',
         required        => 1,
@@ -33,21 +31,27 @@ class App::PortDistances::Cache {
         handles         => [qw/clear/],
     );
 
-    has 'use' => ( is => 'ro', isa => 'Bool', required => 1, lazy => 1, default => 1 );
+    has '_use' => (
+        is       => 'rw',
+        isa      => 'Bool',
+        required => 1,
+        lazy     => 1,
+        default  => 1
+    );
 
     method set ( $key!, $value! ) {
-        return unless $self->use;
-        $self->cache->freeze( Digest::MD5->new->add($key)->hexdigest, $value );
+        return unless $self->_use;
+        $self->_cache->freeze( Digest::MD5->new->add($key)->hexdigest, $value );
     };
 
     method get ( $key! ) {
-        return unless $self->use;
-        $self->cache->thaw( Digest::MD5->new->add($key)->hexdigest );
+        return unless $self->_use;
+        $self->_cache->thaw( Digest::MD5->new->add($key)->hexdigest );
     };
 
     method in ( $key! ) {
-        return unless $self->use;
-        $self->cache->exists( Digest::MD5->new->add($key)->hexdigest );
+        return unless $self->_use;
+        $self->_cache->exists( Digest::MD5->new->add($key)->hexdigest );
     };
 };
 

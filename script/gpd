@@ -1,8 +1,7 @@
 #!/usr/bin/env perl
 
-use lib '../lib';
+use FindBin;
+use lib File::Spec->catdir( $FindBin::Bin, '..', 'lib' );
 use App::PortDistances;
-use Data::Dumper;
 
-my $app = App::PortDistances->new_with_options;
-print Data::Dumper::Dumper $app->_graph;
+App::PortDistances->run;

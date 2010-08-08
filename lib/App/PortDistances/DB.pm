@@ -6,12 +6,8 @@ class App::PortDistances::DB {
     use FindBin;
     use Cwd;
     use constant DB_FILE => Cwd::abs_path(
-        File::Spec->catfile( $FindBin::Bin, qw/.. .. ../, 'data', 'db.json' )
+        File::Spec->catfile( $FindBin::Bin, '..', 'data', 'db.json' )
     );
-    
-    use lib File::Spec->catdir( $FindBin::Bin, ('..') x 3, 'lib' );
-    use Data::Dumper;
-
     use App::PortDistances::DB::Port;
     use App::PortDistances::Types
         qw/
@@ -45,7 +41,7 @@ class App::PortDistances::DB {
         isa      => File,
         required => 1,
         lazy     => 1,
-        default  => DB_FILE,
+        default  => sub { DB_FILE },
     );
 
     has 'db' => (
@@ -114,7 +110,9 @@ Return intersection instead of union of results in case of more than one search 
                   Quadrant :$quadrant?,         Hemisphere :$hemisphere?,
                   Bool     :$intersection? = 0 ) {
 
-        push my @ports, [ $self->_find_by_approx(  $aname )   ]
+        push my @ports, [ $self->details( $name ) ] if $name;
+
+        push    @ports, [ $self->_find_by_approx(  $aname )   ]
             if $aname;
         push    @ports, [ $self->_find_by_country( $country ) ]
             if $country;
@@ -228,14 +226,3 @@ Return intersection instead of union of results in case of more than one search 
         }
     }
 };
-
-__END__
-use Data::Dumper;
-my $o = App::PortDistances::DB->new;
-print Dumper ($o->find( aname => 'Japan' ));exit;
-print Dumper $o;
-print Dumper ($o->_find_by_country( 'Japan' ));exit;
-print Dumper $o;exit;
-print Dumper ($o->find( aname => 'setb', country => 'Portugal', intersection => 1 ));exit;
-print Dumper ($o->_find_by_prox( latitude => 0, longitude => 0, radius => 500 ));exit;
-print Dumper ($o->_find_by_approx( 'span' ));exit;

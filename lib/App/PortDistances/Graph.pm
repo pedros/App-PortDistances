@@ -3,24 +3,20 @@ use MooseX::Declare;
 class App::PortDistances::Graph {
 
     use Graph;
-    use FindBin;
-
-    use lib File::Spec->catdir( $FindBin::Bin, ('..') x 3, 'lib' );
-
     use App::PortDistances::DB;
     use App::PortDistances::Cache;
 
-    has '_db' => (
+    has 'db' => (
         is       => 'rw',
         isa      => 'App::PortDistances::DB',
         lazy     => 1,
         required => 1,
-        clearer  => '_clear__db',
+        clearer  => '_clear_db',
         handles  => { 'find' => 'find' },
         default  => sub { App::PortDistances::DB->new },
     );
 
-    has '_cache' => (
+    has 'cache' => (
         is       => 'rw',
         isa      => 'App::PortDistances::Cache',
         required => 1,
@@ -42,54 +38,54 @@ class App::PortDistances::Graph {
         }
     );
 
-    has 'apsp' => (
-        is      => 'rw',
-        isa     => 'Graph',
-        default => sub { shift->APSP_Floyd_Warshall },
-        lazy    => 1,
-    );
+    method apsp {
+        my $key = join q{:}, 'apsp', sort $self->db->port_names;
 
-    has 'sssp' => (
-        is      => 'rw',
-        isa     => 'Graph',
-        default => sub { shift->SPT_Dijkstra( shift ) },
-        lazy    => 1,
-    );
-    
-    around apsp {
-        my $key = join q{:}, 'apsp', sort $self->_db->port_names;
-
-        print STDERR "Got apsp from cache\n" and return $self->_cache->get( $key )
-            if $self->_cache->in( $key );
+        print STDERR "Got apsp from cache\n" and return $self->cache->get( $key )
+        if $self->cache->in( $key );
 
         print STDERR "Computing apsp into cache\n";
-        my $struct = $self->$orig;
-        $self->_cache->set( $key, $struct );
-        return $struct;
-    };
 
-    around sssp ( $source! ) {
-        my $key = join q{:}, $source, sort $self->_db->port_names;
+        my $apsp = $self->APSP_Floyd_Warshall;
+
+        $self->cache->set( $key, $apsp );
+        return $apsp;
+    }
+
+    method sssp ( Str $source!, ArrayRef[Str] $targets? = [] ) {
+        my $key = join q{:}, $source, sort $self->db->port_names;
+
+        print STDERR "Got sssp for $source from cache\n"
+        if $self->cache->in( $key );
         
-        print STDERR "Got sssp for $source from cache\n" and return $self->_cache->get( $key )
-            if $self->_cache->in( $key );
+        print STDERR "Computing sssp into cache\n"
+        unless $self->cache->in( $key );
+        
+        my $sssp = $self->cache->in( $key ) ? $self->cache->get( $key ) : $self->SPT_Dijkstra( $source );
 
-        print STDERR "Computing sssp into cache\n";
-        my $struct = $self->$orig( $source );
-        $self->_cache->set( $key, $struct );
-        return $struct;
-    };
+        if ($targets and @$targets) {
+            my %targets = map { $_ => 1 } @$targets;
+
+            TARGET:
+            for my $target (@$targets ? @$targets : $self->vertices) {
+                $sssp->delete_vertex( $target ) unless exists $targets{$target};
+            }
+        }
+
+        $self->cache->set( $key, $sssp );
+        return $sssp;
+    }
 
     method _build_graph {
         my $graph = Graph->new;
 
-    SOURCE:
-        for my $source ( $self->_db->ports ) {
+        SOURCE:
+        for my $source ( $self->db->ports ) {
             $graph->set_vertex_attribute( $source->name, 'latitude',  $source->latitude  );
             $graph->set_vertex_attribute( $source->name, 'longitude', $source->longitude );
 
-        TARGET:
-            for my $target ( $self->_db->details($source->targets) ) {
+            TARGET:
+            for my $target ( $self->db->details($source->targets) ) {
                 next TARGET unless defined $target;
                 
                 $graph->set_vertex_attribute( $target->name, 'latitude',  $target->latitude  );
@@ -97,9 +93,8 @@ class App::PortDistances::Graph {
                 $graph->add_weighted_path( $source->name, $source->distance($target->name), $target->name );
             }
         }
-        #$self->_clear__db;
         return $graph;
-    };
+    }
     
     method graph_details {
         my @density_limits = $self->density_limits;
@@ -110,7 +105,7 @@ class App::PortDistances::Graph {
                 sparse     => $density_limits[0],
                 dense      => $density_limits[1],
                 complete   => $density_limits[2]);
-    };
+    }
 
     method _apsp_to_graph {
         my $graph = Graph->new;
@@ -126,15 +121,22 @@ class App::PortDistances::Graph {
             }
         );
         return $graph;
-    };
+    }
 
-    method _graph_to_matrix ( $graph! ) {
+    method _graph_to_matrix ( 
+        $graph!,
+        ArrayRef[Str] $sources? = [],
+        ArrayRef[Str] $targets? = [] 
+    ) {
+
+        print STDERR "_graph_to_matrix ", `date`, "\n";
         my $matrix = Graph::Matrix->new( $graph );
-    SOURCE:
-        for my $source ( $graph->vertices ) {
 
-        TARGET:
-            for my $target ( $graph->vertices ) {
+        SOURCE:
+        for my $source ( @$sources ?  @$sources : $graph->vertices) {
+
+            TARGET:
+            for my $target ( @$targets ? @$targets : $graph->vertices ) {
                 $matrix->set(
                     $source,
                     $target,
@@ -145,18 +147,32 @@ class App::PortDistances::Graph {
         return $matrix;
     }
 
-    method _format_matrix ( $matrix! ) {
+    method _format_matrix (
+        $matrix!,
+        ArrayRef[Str] $sources? = [],
+        ArrayRef[Str] $targets? = [] 
+    ) {
+
+        print STDERR "_format_matrix: ", `date`, "\n";
+
         my @sources
-            = map  { $_->[0] }
-              sort { $a->[3] <=> $b->[3] || $a->[2] <=> $b->[2] || $a->[1] cmp $b->[1] || $a->[0] cmp $b->[0] }
-              map  { [ $_->name, $_->country, $_->latitude, $_->longitude ] }
-                  $self->_db->details( $self->vertices );
+        = map  { $_->[0] }
+        sort { $a->[3] <=> $b->[3] || $a->[2] <=> $b->[2] || $a->[1] cmp $b->[1] || $a->[0] cmp $b->[0] }
+        map  { [ $_->name, $_->country, $_->latitude, $_->longitude ] }
+        $self->db->details( @$sources ? @$sources : $self->vertices );
         
+        my @targets
+        = map  { $_->[0] }
+        sort { $a->[3] <=> $b->[3] || $a->[2] <=> $b->[2] || $a->[1] cmp $b->[1] || $a->[0] cmp $b->[0] }
+        map  { [ $_->name, $_->country, $_->latitude, $_->longitude ] }
+        $self->db->details( @$targets ? @$targets : $self->vertices );
+
         my @matrix = [undef, @sources];
 
-        for my $source ( @sources ) {
-            my @row = ($source);
-            for my $target ( @sources ) {
+        for my $target ( @targets ) {
+            my @row = ($target);
+
+            for my $source ( @sources ) {
                 push @row, $matrix->get( $source, $target );
             }
             push @matrix, \@row;
@@ -164,45 +180,97 @@ class App::PortDistances::Graph {
         return \@matrix;
     }
 
+    method _print_matrix ( ArrayRef[ArrayRef] $matrix! ) {
+        for my $row ( @$matrix ) {
+            print join( "\t", map { defined $_ ? $_ : q{} } @$row ), "\n";
+        }
+    }
+
     method _sssp_to_paths ( Str $source!, ArrayRef[Str] $targets! = [] ) {
         my %paths;
-        my $sssp = $self->sssp( $source );
-        
-    TARGET:
+        my $sssp = $self->sssp( $source, $targets );
+
+        TARGET:
         for my $target (@$targets ? @$targets : $self->vertices) {
 
             my $current = $target;
-        CURRENT:
+            CURRENT:
             while ( defined $current ) {
                 my $predecessor = $sssp->get_vertex_attribute( $current, 'p' )
-                    || next TARGET;
+                || next TARGET;
                 my $weight = $sssp->get_edge_attribute( $predecessor, $current, 'weight' );                
                 unshift @{ $paths{$target} }, [ $current, $weight ];
                 $current = $predecessor;
             }
         }
         return \%paths
-    };
-    
-    method shortest_paths (ArrayRef[Str] :$sources? = [], ArrayRef[Str] :$targets? = [], Bool :$distance_matrix? = 0 ) {
-
-        return $self->_format_matrix( $self->_graph_to_matrix( $self->_apsp_to_graph ) )
-            if @$sources > 1 or $distance_matrix;
-
-        my %paths;
-    SOURCE:
-        for my $source (@$sources ? @$sources : $self->vertices) {
-            $paths{$source} = $self->_sssp_to_paths( $source, $targets );
-        }
-        return \%paths;
     }
-};
+    
+    method _sssp_to_graph ( Str $source!, ArrayRef[Str] $targets? = [] ) {
+        my $graph = Graph->new;
+        my $sssp  = $self->sssp( $source, $targets );
 
-use Data::Dumper;
-my $o = App::PortDistances::Graph->new;
-print Dumper $o->shortest_paths( sources => ['Setubal, Portugal', 'Lisboa, Portugal'] );
+        TARGET:
+        for my $target (@$targets ? @$targets : $self->vertices) {
 
-__END__
-for my $row ( @$m ) {
-    print join( "\t", map { defined $_ ? $_ : q{} } @$row ), "\n";
+            my $current = $target;
+            CURRENT:
+            while ( defined $current ) {
+                my $predecessor = $sssp->get_vertex_attribute( $current, 'p' )
+                || next TARGET;
+                my $weight = $sssp->get_edge_attribute( $predecessor, $current, 'weight' );                
+                $graph->add_weighted_path(
+                    $source,
+                    $weight,
+                    $current
+                );
+                $current = $predecessor;
+            }
+        }
+        return $graph;
+    }
+
+    method shortest_paths (
+        ArrayRef[Str] :$sources? = [],
+        ArrayRef[Str] :$targets? = [], 
+        Bool :$distance_matrix?  = 0
+    ) {
+
+        if ($distance_matrix) {
+            if (@$sources > 1) {
+                return $self->_print_matrix(
+                    $self->_format_matrix(
+                        $self->_graph_to_matrix(
+                            $self->_apsp_to_graph
+                        )
+                    )
+                );
+            }
+            else {
+                return
+                $self->_print_matrix(
+                    $self->_format_matrix(
+                        $self->_graph_to_matrix( 
+                            $self->_sssp_to_graph(
+                                $sources->[0],
+                                $targets
+                            ),
+                            $sources,
+                            $targets,
+                        ),
+                        $sources,
+                        $targets,
+                    ),
+                );
+            }
+        }
+        else {
+            my %paths;
+            SOURCE:
+            for my $source (@$sources ? @$sources : $self->vertices) {
+                $paths{$source} = $self->_sssp_to_paths( $source, $targets );
+            }
+            return \%paths;
+        }
+    }
 }
