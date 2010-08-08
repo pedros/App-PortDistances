@@ -94,11 +94,15 @@ Find port(s) by broad region.
 
 =item radius    => $radius
 
-Find port(s) by proximity within given radius, in miles, using L<GIS::Distance|GIS::Distance>.
+Find port(s) by proximity within given radius, in miles (using L<GIS::Distance|GIS::Distance>), and given latitude and longitude coordinates, in decimal degree format.
 
-=item intersection => $intersection
+=item intersect => 0|1
 
-Return intersection instead of union of results in case of more than one search criteria is specified.
+Compute intersection instead of union of results if more than one search criteria is specified.
+
+=item complement => 0|1
+
+Return set difference between ports in DB and ports computed by find()
 
 =back
 
@@ -108,7 +112,7 @@ Return intersection instead of union of results in case of more than one search 
                   Str      :$country?,          Num        :$radius?,
                   Coord    :$latitude?,         Coord      :$longitude?,
                   Quadrant :$quadrant?,         Hemisphere :$hemisphere?,
-                  Bool     :$intersection? = 0 ) {
+                  Bool     :$intersect? = 0,    Bool       :$complement? = 0 ) {
 
         push my @ports, [ $self->details( $name ) ] if $name;
 
@@ -126,20 +130,23 @@ Return intersection instead of union of results in case of more than one search 
             if $radius and ($name xor ($latitude and $longitude));
 
         my %ports = map { $_ => $self->details($_) }
-            $self->_set_combine( \@ports, intersection => $intersection );
+            $self->_set_combine( \@ports, intersect => $intersect, complement => $complement );
 
         return App::PortDistances::DB->new( db => \%ports );
     }
 
-    method _set_combine ( ArrayRef[ArrayRef] $lists!, Bool :$intersection? = 0 ) {
+    method _set_combine ( ArrayRef[ArrayRef] $lists!, Bool :$intersect? = 0, Bool :$complement? = 0 ) {
         my %counts;
         for my $list ( @$lists ) {
             $counts{$_->name}++ for @$list;
         }
-        
-        return $intersection
-            ? grep { $counts{$_} == @$lists } keys %counts
-            : keys %counts;
+
+        %counts = map { $_ => 1 }
+        $intersect
+        ? grep { $counts{$_} == @$lists } keys %counts
+        : keys %counts;
+
+        return grep { $complement ? not exists $counts{$_} : exists $counts{$_} } $self->port_names;
     }
 
     method _find_by_approx ( Str $aname! ) {
