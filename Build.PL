@@ -23,6 +23,7 @@ my $builder = Module::Build->new(
         'MooseX::Declare'      => 0,
         'MooseX::Types'        => 0,
         'MooseX::Types::Moose' => 0,
+        'MooseX::Getopt'       => 0,
         'String::Approx'       => 0,
         'Test::More'           => 0,
         'Carp'                 => 0,
