@@ -5,9 +5,10 @@ class App::PortDistances::DB {
     use File::Spec;
     use FindBin;
     use Cwd;
-    use constant DB_FILE => Cwd::abs_path(
-        File::Spec->catfile( $FindBin::Bin, '..', 'data', 'db.json' )
-    );
+    
+    use File::ShareDir;
+    use constant DB_FILE => File::ShareDir::dist_file('App-PortDistances', 'db.json');
+
     use App::PortDistances::DB::Port;
     use App::PortDistances::Types
         qw/

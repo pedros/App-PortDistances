@@ -31,6 +31,7 @@ my $builder = Module::Build->new(
     add_to_cleanup     => ['App::PortDistances-*'],
     create_makefile_pl => 'traditional',
     script_files       => ['script/gpd'],
+    share_dir          => 'data',
     sign               => 1,
     create_readme      => 1,
     create_license     => 1,
