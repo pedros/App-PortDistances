@@ -15,7 +15,7 @@ class App::PortDistances::Cache {
 
     has 'cache_root' => (
         is       => 'ro',
-        isa      => File,
+        isa      => 'Str',
         required => 1,
         lazy     => 1,
         default  => CACHE_ROOT,
